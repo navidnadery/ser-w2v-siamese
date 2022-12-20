@@ -10,8 +10,7 @@ from collections import defaultdict
 import os
 import torch
 import torchaudio
-
-speakers = ['03', '08', '09', '10', '11', '12', '13', '14', '15', '16']
+import config
 
 path = input("please enter the path where wav files exist(example: /home/user/Downloads/Berlin/wav/):\n")
 assert os.path.exists(path) and len(glob(os.path.join(path, "*.wav"))) > 0, "path is not correct, please enter the path where all wav files exist in"
@@ -32,7 +31,7 @@ os.system(f"rm {path}/*/*.pt")
 # In[4]:
 # Extract and save features for Berlin dataset
 ses = defaultdict(list)
-for f, g in enumerate(speakers):
+for f, g in enumerate(config.speakers):
     if not os.path.exists(data_dir.joinpath(g)):
         os.mkdir(data_dir.joinpath(g))
     ses[f] = list(data_dir.glob(f"{g}*.wav"))
