@@ -1,4 +1,4 @@
-from random import random, randint
+from random import random, randint, choice
 import torch
 import numpy as np
 import itertools
@@ -87,61 +87,20 @@ class balanced_sampler(Sampler):
         iter_list = []
 
         ## Data for each class
-        key0 = dictkeys[0]
-        data0    = self.label_dict[key0]
-        pIndex0 = np.random.permutation(data0)
-        key1 = dictkeys[1]
-        data1    = self.label_dict[key1]
-        pIndex1 = np.random.permutation(data1)
-        key2 = dictkeys[2]
-        data2    = self.label_dict[key2]
-        pIndex2 = np.random.permutation(data2)
-        key3 = dictkeys[3]
-        data3    = self.label_dict[key3]
-        pIndex3 = np.random.permutation(data3)
-
-        for i in range(max(len(pIndex0), len(pIndex1), len(pIndex2), len(pIndex3))):
-            rnd = random()
-            if rnd < 0.4:
-                pIdx0 = [pIndex0[i%len(pIndex0)], pIndex0[(i+randint(1, len(pIndex0)))%len(pIndex0)]]
-            elif rnd < 0.6:
-                pIdx0 = [pIndex0[i%len(pIndex0)], pIndex1[(i+randint(1, len(pIndex1)))%len(pIndex1)]]
-            elif rnd < 0.8:
-                pIdx0 = [pIndex0[i%len(pIndex0)], pIndex2[(i+randint(1, len(pIndex2)))%len(pIndex2)]]
-            else:
-                pIdx0 = [pIndex0[i%len(pIndex0)], pIndex3[(i+randint(1, len(pIndex3)))%len(pIndex3)]]
-            
-            rnd = random()
-            if rnd < 0.4:
-                pIdx1 = [pIndex1[i%len(pIndex1)], pIndex1[(i+randint(1, len(pIndex1)))%len(pIndex1)]]
-            elif rnd < 0.6:
-                pIdx1 = [pIndex1[i%len(pIndex1)], pIndex0[(i+randint(1, len(pIndex0)))%len(pIndex0)]]
-            elif rnd < 0.8:
-                pIdx1 = [pIndex1[i%len(pIndex1)], pIndex2[(i+randint(1, len(pIndex2)))%len(pIndex2)]]
-            else:
-                pIdx1 = [pIndex1[i%len(pIndex1)], pIndex3[(i+randint(1, len(pIndex3)))%len(pIndex3)]]
-
-            rnd = random()
-            if rnd < 0.4:
-                pIdx2 = [pIndex2[i%len(pIndex2)], pIndex2[(i+randint(1, len(pIndex2)))%len(pIndex2)]]
-            elif rnd < 0.6:
-                pIdx2 = [pIndex2[i%len(pIndex2)], pIndex0[(i+randint(1, len(pIndex0)))%len(pIndex0)]]
-            elif rnd < 0.8:
-                pIdx2 = [pIndex2[i%len(pIndex2)], pIndex1[(i+randint(1, len(pIndex1)))%len(pIndex1)]]
-            else:
-                pIdx2 = [pIndex2[i%len(pIndex2)], pIndex3[(i+randint(1, len(pIndex3)))%len(pIndex3)]]
-            
-            rnd = random()
-            if rnd < 0.4:
-                pIdx3 = [pIndex3[i%len(pIndex3)], pIndex3[(i+randint(1, len(pIndex3)))%len(pIndex3)]]
-            elif rnd < 0.6:
-                pIdx3 = [pIndex3[i%len(pIndex3)], pIndex0[(i+randint(1, len(pIndex0)))%len(pIndex0)]]
-            elif rnd < 0.8:
-                pIdx3 = [pIndex3[i%len(pIndex3)], pIndex2[(i+randint(1, len(pIndex2)))%len(pIndex2)]]
-            else:
-                pIdx3 = [pIndex3[i%len(pIndex3)], pIndex1[(i+randint(1, len(pIndex1)))%len(pIndex1)]]
-            
-            iter_list.append(np.random.permutation([pIdx0, pIdx1, pIdx2, pIdx3]))
+        length = lambda values : len(values)
+        max_idx = max(length(value) for value in self.label_dict.values())
+        
+        for i in range(max_idx):
+            pIdx = []
+            for key in dictkeys:
+                pIdx0 = [self.label_dict[key][i%len(self.label_dict)]]
+                rnd = random()
+                if rnd < 0.4:
+                    pIdx0 += [self.label_dict[key][(i+randint(1, len(self.label_dict)))%len(self.label_dict)]]
+                else:
+                    pIdx0 += [self.label_dict[choice([i for i in range(0,len(dictkeys)) if i not in [key]])][(i+randint(1, len(self.label_dict)))%len(self.label_dict)]]
+                pIdx.append(pIdx0)
+            iter_list.append(np.random.permutation(pIdx))
         
         return iter(itertools.chain.from_iterable([iter for iter in iter_list]))
     
