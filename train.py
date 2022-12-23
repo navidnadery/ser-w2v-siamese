@@ -1,32 +1,22 @@
-import imp
-from multiprocessing.spawn import import_main_path
-from typing import Optional
-import itertools
-import shutil
 from pathlib import Path
 from collections import defaultdict
-from tqdm import tqdm
 import numpy as np
 import os
 import torch
-import torchaudio
 from torch import nn
 
 import gc
 import argparse
-from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import Sampler
 
 import model
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.metrics import recall_score as recall
 from sklearn.metrics import confusion_matrix as confusion
 from sklearn.metrics import accuracy_score as accuracy
-import math
+from sklearn.metrics import roc_curve
 import config
 import data_utils
 
@@ -41,6 +31,8 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
     y_targ_valid = np.empty((4 * valid_count),dtype=np.float32)
     best_valid_uw = 0
     best_valid_ac = 0
+    best_eer = 0
+    best_eer_thresh = 0
     ##########tarin model###########
     def init_weights(m):
         if type(m) == torch.nn.Linear:
@@ -116,31 +108,29 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
         model_.train()
         index = 0
         cost_valid = cost_valid/len(y_pred_valid)
-        y_pred_valid[y_pred_valid < 0.5] = 0
-        y_pred_valid[y_pred_valid >= 0.5] = 1
+        fpr, tpr, threshold = roc_curve(y_targ_valid, y_pred_valid, pos_label=1)
+        fnr = 1 - tpr
+        eer_threshold = threshold[np.nanargmin(np.absolute((fnr - fpr)))]
+        EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
+        y_pred_valid[y_pred_valid < eer_threshold] = 0
+        y_pred_valid[y_pred_valid >= eer_threshold] = 1
           # compute evaluated results
         valid_rec_uw = recall(y_pred_valid, y_targ_valid, average='macro')
         valid_conf = confusion(y_pred_valid, y_targ_valid)
         valid_acc_uw = accuracy(y_pred_valid, y_targ_valid)
-
-        # save the best val result
-        if valid_rec_uw > best_valid_uw:
-            best_valid_uw = valid_rec_uw
-            best_valid_conf = valid_conf
-            
+        
+        
+        
+        
         if valid_acc_uw > best_valid_ac:
             best_valid_ac = valid_acc_uw
+            best_valid_uw = valid_rec_uw
+            best_valid_conf = valid_conf
+            best_eer_thresh = eer_threshold
+            best_eer = EER
             if not os.path.isdir("checkpoint"):
                 os.mkdir("checkpoint")
-            torch.save({"state_dict": model_.state_dict(), "classifier": criterion.state_dict()}, os.path.join(checkpoint, model_name))
-        else:
-            if not model_.conv[0].weight.requires_grad:
-                for param in model_.parameters():
-                    param.requires_grad = True
-                optimizer = optim.Adam([
-                    {'params': list(model_.parameters())},
-                    {'params': list(criterion.parameters()), 'lr': 1e-2}],
-                    lr=1e-2, betas=(0.9, 0.999), weight_decay=5e-4)
+            torch.save({"state_dict": model_.state_dict(), "classifier": criterion.state_dict()}, os.path.join(checkpoint, model_name)) 
         
         if verbos:
             # print results
@@ -159,7 +149,7 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
             print (best_valid_conf)
             print ("*****************************************************************" )
 
-    return best_valid_ac
+    return best_valid_ac, best_eer, best_eer_thresh
 
 
 
@@ -169,7 +159,9 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
 #torch.cuda.manual_seed(seed)
 def cross_fold(args):
     total_acval = []
-    for fold in range(0,10,2):
+    total_erval = []
+    total_erthr = []
+    for fn, fold in enumerate(range(0,10,2)):
         train_idx = [str(fi_) for fo in [ses[fold], ses[(fold+1)]] for fi_ in fo]
         eval_idx = [str(fi_) for fo in range(10) if fo not in [fold, (fold+1)] for fi_ in ses[fo]]
         train_data, train_label, train_emt = data_utils.read_EMODB(audio_indexes = train_idx, is_training = True, filter_num = config.feat_dim, timesteps = config.timesteps)
@@ -181,25 +173,27 @@ def cross_fold(args):
         train_dataset = data_utils.data_emo(train_data, train_label.to(torch.long))
         test_dataset = data_utils.data_emo(eval_data, eval_label.to(torch.long), train_data, train_label.to(torch.long))
 
-        accval = []
-        for r_ in range(10):
-            emob_sampler = data_utils.balanced_sampler(train_dataset)
-            train_loader = DataLoader(train_dataset, batch_size=batch_size,
-                sampler=emob_sampler, num_workers=0, pin_memory=False, drop_last=False)
-            
-            emoe_sampler = data_utils.eval_sampler(test_dataset, train_dataset)
-            eval_loader = DataLoader(test_dataset, batch_size=batch_size,
-                shuffle=False, sampler=emoe_sampler, num_workers=0, pin_memory=False, drop_last=False)
-            accval.append(train(train_loader, eval_loader, valid_count = eval_label.shape[0], load = args.load_model, freeze = args.freeze))
-        print("<< Best valid_Acc: %3.4g for %d >>" %(max(accval), np.argmax(accval)))
-        del train_data, train_label, train_label_pf, train_sample, train_emt
+        emob_sampler = data_utils.balanced_sampler(train_dataset)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size,
+            sampler=emob_sampler, num_workers=0, pin_memory=False, drop_last=False)
+        
+        emoe_sampler = data_utils.eval_sampler(test_dataset, train_dataset)
+        eval_loader = DataLoader(test_dataset, batch_size=batch_size,
+            shuffle=False, sampler=emoe_sampler, num_workers=0, pin_memory=False, drop_last=False)
+        acc_val, eer_val, eerthresh_val = train(train_loader, eval_loader, valid_count = eval_label.shape[0], load = args.load_model, freeze = args.freeze)
+        print("Valid_Acc: %3.4g EER: %3.2g in fold %d" %(acc_val, eerthresh_val, fn))
+        del train_data, train_label, train_emt
         del eval_data, eval_label, eval_emt
         del train_loader, eval_loader
-        total_acval.append(max(accval))
+        total_acval.append(acc_val)
+        total_erval.append(eer_val)
+        total_erthr.append(eerthresh_val)
 
         gc.collect()
 
     print(sum(total_acval)/len(total_acval))
+    print(sum(total_erthr)/len(total_erthr))
+    print(sum(total_erval)/len(total_erval))
 
 
 
