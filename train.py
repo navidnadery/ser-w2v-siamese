@@ -1,6 +1,6 @@
 from pathlib import Path
 from collections import defaultdict
-from tkinter.messagebox import NO
+import random
 import numpy as np
 import os
 import torch
@@ -167,8 +167,8 @@ def cross_fold(args):
     total_erval = []
     total_erthr = []
     for fn, fold in enumerate(range(0,10,2)):
-        train_idx = [str(fi_) for fo in [ses[fold], ses[(fold+1)]] for fi_ in fo]
-        eval_idx = [str(fi_) for fo in range(10) if fo not in [fold, (fold+1)] for fi_ in ses[fo]]
+        train_idx = [str(fi_) for fo in range(10) if fo not in [fold, (fold+1)] for fi_ in ses[fo]]
+        eval_idx = [str(fi_) for fo in [ses[fold], ses[(fold+1)]] for fi_ in fo]
         train_data, train_label, train_emt = data_utils.read_EMODB(audio_indexes = train_idx, is_training = True, filter_num = config.feat_dim, timesteps = config.timesteps)
         eval_data, eval_label, eval_emt = data_utils.read_EMODB(audio_indexes = eval_idx, is_training = False, filter_num = config.feat_dim, timesteps = config.timesteps)
         train_label = train_label.squeeze(1)
@@ -206,6 +206,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data_dir', type=str,
                         required=True, help='path of the data directory where features are extracted into')
+    parser.add_argument('-s', '--speaker', action='store_true',
+                        required=False, help='pass -s to fold the data by speaker')
     parser.add_argument('-l', '--load_model', type=str,
                         required=False, help='path to load the saved checkpoint')
     parser.add_argument('--freeze', action='store_true',
@@ -219,7 +221,15 @@ if __name__ == '__main__':
     data_dir = Path(args.data_dir)
     ses = defaultdict(list)
 
-    for f, g in enumerate(config.speakers):
-        ses[f] = list(data_dir.joinpath(g).glob('*.pt'))
-
+    if args.speaker:
+        for f, g in enumerate(config.speakers):
+            ses[f] = list(data_dir.joinpath(g).glob('*.pt'))
+    else:
+        for f, g in enumerate(config.speakers):
+            one_speaker_samples = list(data_dir.joinpath(g).glob('*.pt'))
+            random.shuffle(one_speaker_samples)
+            for i in range(10):
+                samples = one_speaker_samples[i*int(np.ceil(len(one_speaker_samples)/10)):(i+1)*int(np.ceil(len(one_speaker_samples)/10))]
+                ses[i].extend(samples)
+        
     cross_fold(args)
