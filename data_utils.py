@@ -12,12 +12,9 @@ from collections import defaultdict
 
 def read_EMODB(audio_indexes, is_training, filter_num, timesteps):
     sample_num = 2000
-    pernums_sample = np.arange(sample_num)
     
     sample_label = torch.empty((sample_num, 1), dtype=torch.int8)
-    sample_label_pf = torch.empty((sample_num, 1), dtype=torch.int8)
     sample_data = torch.empty((sample_num, timesteps, filter_num), dtype=torch.float32)
-    sample_pros = torch.empty((sample_num, 103), dtype=torch.float32)
     
     snum = 0
     sample_num = 0

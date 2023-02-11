@@ -29,3 +29,6 @@ Which needs a 4*64 linear mapping to get the result of the Siamese network (same
 - $$Batch * 256$$
 
 and outputs a matrix with dimension of $Batch * 1$ with values in range [0,1] which shows how much these two samples are close.
+
+# LOSS
+TODO: Implement triplet loss function in pyTorch

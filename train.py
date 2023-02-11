@@ -1,5 +1,6 @@
 from pathlib import Path
 from collections import defaultdict
+from tkinter.messagebox import NO
 import numpy as np
 import os
 import torch
@@ -26,7 +27,7 @@ device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("
 verbos = 0
 checkpoint = 'checkpoint'
 model_name = 'best_emodb.pt'
-def train(train_loader, valid_loader, valid_count, load, freeze):
+def train(train_loader, valid_loader, valid_count, load, freeze, max_iters):
     y_pred_valid = np.empty((4 * valid_count),dtype=np.float32)
     y_targ_valid = np.empty((4 * valid_count),dtype=np.float32)
     best_valid_uw = 0
@@ -57,7 +58,7 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
         state_dict = {}
         criteriondict = {}
 
-        
+
         saved_model = torch.load(os.path.join("checkpoint_best_new", "best_model204.pth")) #204
         state_dict = saved_model['state_dict']
         criteriondict = saved_model['classifier']
@@ -70,11 +71,13 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
         for param in model_.parameters():
             param.requires_grad = False
         optimizer = optim.Adam(criterion.parameters(), lr=config.learning_rate, betas=(0.9, 0.999), weight_decay=5e-4)
+        scheduler = None
     else:
         optimizer = optim.Adam([
             {'params': list(model_.parameters())},
             {'params': list(criterion.parameters()), 'lr': config.learning_rate}],
             lr=config.learning_rate, betas=(0.9, 0.999), weight_decay=5e-4)
+        scheduler = optim.lr_scheduler.OneCycleLR(optimizer=optimizer, max_lr = 1e-2, total_steps = max_iters, pct_start = 0.2)
 
     for epoch in range(config.max_epochs):
         model_.train()
@@ -89,11 +92,13 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
             if config.clip:
                 torch.nn.utils.clip_grad_norm_(model_.parameters(), config.clip)
             optimizer.step()
-            
+            if scheduler is not None:
+                scheduler.step()
+
         index = 0
         cost_valid = 0
         model_.eval()
-        # valid_data = 
+        # valid_data =
         with torch.no_grad():
             for valid_data_1, valid_data_2, Valid_label_ in valid_loader:
                 input1 = valid_data_1.to(device)
@@ -118,10 +123,10 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
         valid_rec_uw = recall(y_pred_valid, y_targ_valid, average='macro')
         valid_conf = confusion(y_pred_valid, y_targ_valid)
         valid_acc_uw = accuracy(y_pred_valid, y_targ_valid)
-        
-        
-        
-        
+
+
+
+
         if valid_acc_uw > best_valid_ac:
             best_valid_ac = valid_acc_uw
             best_valid_uw = valid_rec_uw
@@ -130,8 +135,8 @@ def train(train_loader, valid_loader, valid_count, load, freeze):
             best_eer = EER
             if not os.path.isdir("checkpoint"):
                 os.mkdir("checkpoint")
-            torch.save({"state_dict": model_.state_dict(), "classifier": criterion.state_dict()}, os.path.join(checkpoint, model_name)) 
-        
+            torch.save({"state_dict": model_.state_dict(), "classifier": criterion.state_dict()}, os.path.join(checkpoint, model_name))
+
         if verbos:
             # print results
             print ("*****************************************************************")
@@ -176,11 +181,11 @@ def cross_fold(args):
         emob_sampler = data_utils.balanced_sampler(train_dataset)
         train_loader = DataLoader(train_dataset, batch_size=batch_size,
             sampler=emob_sampler, num_workers=0, pin_memory=False, drop_last=False)
-        
+
         emoe_sampler = data_utils.eval_sampler(test_dataset, train_dataset)
         eval_loader = DataLoader(test_dataset, batch_size=batch_size,
             shuffle=False, sampler=emoe_sampler, num_workers=0, pin_memory=False, drop_last=False)
-        acc_val, eer_val, eerthresh_val = train(train_loader, eval_loader, valid_count = eval_label.shape[0], load = args.load_model, freeze = args.freeze)
+        acc_val, eer_val, eerthresh_val = train(train_loader, eval_loader, valid_count = eval_label.shape[0], load = args.load_model, freeze = args.freeze, max_iters = config.max_epochs * (int(len(train_idx) / batch_size)+1))
         print("Valid_Acc: %3.4g EER: %3.2g in fold %d" %(acc_val, eerthresh_val, fn))
         del train_data, train_label, train_emt
         del eval_data, eval_label, eval_emt
@@ -213,7 +218,7 @@ if __name__ == '__main__':
     # In[7]:
     data_dir = Path(args.data_dir)
     ses = defaultdict(list)
-    
+
     for f, g in enumerate(config.speakers):
         ses[f] = list(data_dir.joinpath(g).glob('*.pt'))
 
