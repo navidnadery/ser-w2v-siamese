@@ -26,58 +26,6 @@ class model_emo(nn.Module):
         return Ylogits
 
 
-class MultiheadAttentionKQV(nn.Module):
-    def __init__(
-        self,
-        embed_dim: int,
-        num_heads: int,
-        out_dim: int = None,
-        dropout: float = 0.0,
-    ):
-        super().__init__()
-        head_dim = embed_dim // num_heads
-        if head_dim * num_heads != embed_dim:
-            raise ValueError(f"`embed_dim ({embed_dim})` is not divisible by `num_heads ({num_heads})`")
-
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        self.dropout = nn.Dropout(dropout)
-        self.head_dim = head_dim
-
-        self.scaling = self.head_dim ** -0.5
-
-        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=True)
-        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=True)
-        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=True)
-        if out_dim is not None:
-            self.out_proj = nn.Linear(embed_dim, out_dim, bias=True)
-        else:
-            self.out_proj = nn.Linear(embed_dim, embed_dim, bias=True)
-
-    def forward(
-        self,
-        xk: Tensor,
-        xq: Tensor,
-        xv: Tensor,
-        attention_mask: Optional[Tensor] = None,) -> Tensor:
-        
-        batch_size, channels, length, embed_dim = xk.size()
-        shape = (batch_size, channels*length, self.num_heads, self.head_dim)
-        shape_ = (batch_size, self.num_heads, self.head_dim)
-        q = self.q_proj(xq).view(*shape_)
-        k = self.k_proj(xk).view(*shape).permute(0, 1, 3, 2)  # B, nH, Hd
-        v = self.v_proj(xv).view(*shape)
-        weights = self.scaling * (q.unsqueeze(1) @ k)  # B, nH
-        if attention_mask is not None:
-            weights += attention_mask
-
-        weights = nn.functional.softmax(weights, dim=-1)
-        weights = self.dropout(weights)
-        output = weights @ v  # B, nH, Hd
-        output = output.reshape(batch_size, channels, length, embed_dim)
-        output = self.out_proj(output)
-        return output
-
 # In[17]:
 class MultiheadAttention(nn.Module):
     """Multihead Self Attention module
