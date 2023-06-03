@@ -104,7 +104,7 @@ def train(train_loader, valid_loader, valid_count, load, freeze, max_iters):
                 input1 = valid_data_1.to(device)
                 input2 = valid_data_2.to(device)
                 targets = Valid_label_.to(device, torch.float32)
-                outputs = model_(input2, input2).squeeze(1)
+                outputs = model_(input1, input2).squeeze(1)
                 loss = criterion(outputs, targets)
                 y_pred_valid[index:index+targets.shape[0]] = outputs.cpu().detach().numpy()
                 y_targ_valid[index:index+targets.shape[0]] = Valid_label_
